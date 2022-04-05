@@ -142,9 +142,9 @@ Inputid_dev,Labelid_dev,typeids_dev,inputnmask_dev=ProcessData(dev_file)
 Inputid_test,Labelid_test,typeids_test,inputnmask_test=ProcessData(test_file)
 
 
-train_dataset = Data.DataLoader(MyDataSet(Inputid_train,  inputnmask_train , typeids_train , Labelid_train), TRAIN_BATCH_SIZE, True)
-valid_dataset = Data.DataLoader(MyDataSet(Inputid_dev,  inputnmask_dev , typeids_dev , Labelid_dev), TRAIN_BATCH_SIZE, True)
-test_dataset = Data.DataLoader(MyDataSet(Inputid_test,  inputnmask_test , typeids_test , Labelid_test), TEST_BATCH_SIZE, True)
+train_dataset = Data.DataLoader(MyDataSet(Inputid_train,  inputnmask_train , typeids_train , Labelid_train), TRAIN_BATCH_SIZE, shuffle=True)
+valid_dataset = Data.DataLoader(MyDataSet(Inputid_dev,  inputnmask_dev , typeids_dev , Labelid_dev), TRAIN_BATCH_SIZE,  shuffle=True)
+test_dataset = Data.DataLoader(MyDataSet(Inputid_test,  inputnmask_test , typeids_test , Labelid_test), TEST_BATCH_SIZE,  shuffle=True)
 
 train_data_num=len(Inputid_train)
 test_data_num=len(Inputid_test)
