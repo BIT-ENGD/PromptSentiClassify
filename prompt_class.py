@@ -18,6 +18,9 @@ import torch.optim as optim
 import torch.utils.data as Data
 from torch.utils.tensorboard import SummaryWriter 
 
+from models.bertmask import Bert_Model
+
+from dataset.dataloader import load_data,MyDataSet,ProcessData,MASK_POS
 # hyperparameters 
 EPOCH=200
 RANDOM_SEED=2022 
@@ -26,10 +29,16 @@ TEST_BATCH_SIZE=96   #大批测试
 EVAL_PERIOD=20
 MODEL_NAME="bert-large-uncased"  # bert-base-chinese
 DATA_PATH="data/Twitter2013"
-MASK_POS=3  # "it was [mask]" 中 [mask] 位置
+NUM_WORKERS=10
+
 train_file="twitter-2013train-A.tsv"
 dev_file="twitter-2013dev-A.tsv"
 test_file="twitter-2013test-A.tsv"
+
+
+# env variables
+
+os.environ['TOKENIZERS_PARALLELISM']="false" 
 
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -44,47 +53,9 @@ pd.options.display.max_rows = None
 
 
 
-prefix = 'It was [mask]. '
-
-class Bert_Model(nn.Module):
-    def __init__(self,  bert_path ,config_file ):
-        super(Bert_Model, self).__init__()
-        self.bert = BertForMaskedLM.from_pretrained(bert_path,config=config_file)  # 加载预训练模型权重
 
 
-    def forward(self, input_ids, attention_mask, token_type_ids):
-        outputs = self.bert(input_ids, attention_mask, token_type_ids) #masked LM 输出的是 mask的值 对应的ids的概率 ，输出 会是词表大小，里面是概率 
-        logit = outputs[0]  # 池化后的输出 [bs, config.hidden_size]
 
-
-        return logit 
-
-
-#构建数据集
-class MyDataSet(Data.Dataset):
-    def __init__(self, sen , mask , typ ,label ):
-        super(MyDataSet, self).__init__()
-        self.sen = torch.tensor(sen,dtype=torch.long)
-        self.mask = torch.tensor(mask,dtype=torch.long)
-        self.typ =torch.tensor( typ,dtype=torch.long)
-        self.label = torch.tensor(label,dtype=torch.long)
-
-    def __len__(self):
-        return self.sen.shape[0]
-
-    def __getitem__(self, idx):
-        return self.sen[idx], self.mask[idx],self.typ[idx],self.label[idx]
-#load  data
-   
-def load_data(tsvpath):
-    data=pd.read_csv(tsvpath,sep="\t",header=None,names=["sn","polarity","text"])
-    data=data[data["polarity"] != "neutral"]
-    yy=data["polarity"].replace({"negative":0,"positive":1,"neutral":2})
-    # print(data.loc[0:5,[0,1]])  # 
-    #print(data.iloc[0:5,[1,1]])  # 
-    #print(data.iloc[:,1:2])  # 
-    #print(data.iloc[:,2:3])  # 
-    return data.values[:,2:3].tolist(),yy.tolist() #data.values[:,1:2].tolist()
 
 tokenizer=BertTokenizerFast.from_pretrained(MODEL_NAME)
 
@@ -92,59 +63,21 @@ config=BertConfig.from_pretrained(MODEL_NAME)
 
 model=Bert_Model(bert_path=MODEL_NAME,config_file=config).to(device)
 
-pos_id=tokenizer.convert_tokens_to_ids("good") #9005
-neg_id=tokenizer.convert_tokens_to_ids("bad")  #12139
-
 
 
 # get the data and label
 
-def ProcessData(filepath):
-    x_train,y_train=load_data(DATA_PATH+os.sep+filepath)
-    #x_train,x_test,y_train,y_test=train_test_split(StrongData,StrongLabel,test_size=0.3, random_state=42)
-
-    Inputid=[]
-    Labelid=[]
-    typeid=[]
-    attenmask=[]
-
-    for i in range(len(x_train)):
-
-        text_ = prefix+x_train[i][0]
-
-        encode_dict = tokenizer.encode_plus(text_,max_length=60,padding="max_length",truncation=True)
-        input_ids=encode_dict["input_ids"]
-        type_ids=encode_dict["token_type_ids"]
-        atten_mask=encode_dict["attention_mask"]
-        labelid,inputid= input_ids[:],input_ids[:]
-        if y_train[i] == 0:
-            labelid[MASK_POS] = neg_id
-            labelid[:MASK_POS] = [-1]* len(labelid[:MASK_POS]) 
-            labelid[MASK_POS+1:] = [-1] * len(labelid[MASK_POS+1:])
-            inputid[MASK_POS] = tokenizer.mask_token_id
-        else:
-            labelid[MASK_POS] = pos_id
-            labelid[:MASK_POS] = [-1]* len(labelid[:MASK_POS]) 
-            labelid[MASK_POS+1:] = [-1] * len(labelid[MASK_POS+1:])
-            inputid[MASK_POS] = tokenizer.mask_token_id
-
-        Labelid.append(labelid)
-        Inputid.append(inputid)
-        typeid.append(type_ids)
-        attenmask.append(atten_mask)
-
-    return Inputid,Labelid,typeid,attenmask
+# DATA_PATH+os.sep+filepath
 
 
+Inputid_train,Labelid_train,typeids_train,inputnmask_train=ProcessData(DATA_PATH+os.sep+train_file,tokenizer)
+Inputid_dev,Labelid_dev,typeids_dev,inputnmask_dev=ProcessData(DATA_PATH+os.sep+dev_file,tokenizer)
+Inputid_test,Labelid_test,typeids_test,inputnmask_test=ProcessData(DATA_PATH+os.sep+test_file,tokenizer)
 
-Inputid_train,Labelid_train,typeids_train,inputnmask_train=ProcessData(train_file)
-Inputid_dev,Labelid_dev,typeids_dev,inputnmask_dev=ProcessData(dev_file)
-Inputid_test,Labelid_test,typeids_test,inputnmask_test=ProcessData(test_file)
 
-
-train_dataset = Data.DataLoader(MyDataSet(Inputid_train,  inputnmask_train , typeids_train , Labelid_train), TRAIN_BATCH_SIZE, shuffle=True)
-valid_dataset = Data.DataLoader(MyDataSet(Inputid_dev,  inputnmask_dev , typeids_dev , Labelid_dev), TRAIN_BATCH_SIZE,  shuffle=True)
-test_dataset = Data.DataLoader(MyDataSet(Inputid_test,  inputnmask_test , typeids_test , Labelid_test), TEST_BATCH_SIZE,  shuffle=True)
+train_dataset = Data.DataLoader(MyDataSet(Inputid_train,  inputnmask_train , typeids_train , Labelid_train), TRAIN_BATCH_SIZE, shuffle=True,num_workers=NUM_WORKERS)
+valid_dataset = Data.DataLoader(MyDataSet(Inputid_dev,  inputnmask_dev , typeids_dev , Labelid_dev), TRAIN_BATCH_SIZE,  shuffle=True,num_workers=NUM_WORKERS)
+test_dataset = Data.DataLoader(MyDataSet(Inputid_test,  inputnmask_test , typeids_test , Labelid_test), TEST_BATCH_SIZE,  shuffle=True,num_workers=NUM_WORKERS)
 
 train_data_num=len(Inputid_train)
 test_data_num=len(Inputid_test)
