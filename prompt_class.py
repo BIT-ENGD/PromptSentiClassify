@@ -5,39 +5,28 @@ https://blog.csdn.net/wf19971210/article/details/120543015
 链接：https://pan.baidu.com/s/1Nx7htUBWKBZfo3QPPty3mw
 提取码：1234
 '''
-from cProfile import label
 import warnings
 from datetime import datetime
 import time 
-from libcst import In
 import torch
 import os
-from transformers import BertModel,BertConfig,BertModel,BertTokenizerFast,AdamW, get_cosine_schedule_with_warmup,BertForMaskedLM
+from transformers import BertModel,BertConfig,BertModel,BertTokenizerFast,get_cosine_schedule_with_warmup,BertForMaskedLM
 import pandas  as pd
-
-import numpy as np
-from sklearn.model_selection import train_test_split
-from gensim.models import word2vec
-import re
 import torch 
 import torch.nn as nn 
 import torch.optim as optim 
 import torch.utils.data as Data
-import torch.nn.functional as F
-import csv 
 from torch.utils.tensorboard import SummaryWriter 
 
 # hyperparameters 
 EPOCH=200
 RANDOM_SEED=2022 
-
 TRAIN_BATCH_SIZE=32  #小批训练， 批大小增大时需要提升学习率  https://zhuanlan.zhihu.com/p/413656738
 TEST_BATCH_SIZE=96   #大批测试
-
 EVAL_PERIOD=20
 MODEL_NAME="bert-large-uncased"  # bert-base-chinese
 DATA_PATH="data/Twitter2013"
-
+MASK_POS=3  # "it was [mask]" 中 [mask] 位置
 train_file="twitter-2013train-A.tsv"
 dev_file="twitter-2013dev-A.tsv"
 test_file="twitter-2013test-A.tsv"
@@ -128,17 +117,16 @@ def ProcessData(filepath):
         type_ids=encode_dict["token_type_ids"]
         atten_mask=encode_dict["attention_mask"]
         labelid,inputid= input_ids[:],input_ids[:]
-        maskpos=3  #以下代码将promtp 模板中的mask替换为 对应的标志
         if y_train[i] == 0:
-            labelid[maskpos] = neg_id
-            labelid[:maskpos] = [-1]* len(labelid[:maskpos]) 
-            labelid[maskpos+1:] = [-1] * len(labelid[maskpos+1:])
-            inputid[maskpos] = tokenizer.mask_token_id
+            labelid[MASK_POS] = neg_id
+            labelid[:MASK_POS] = [-1]* len(labelid[:MASK_POS]) 
+            labelid[MASK_POS+1:] = [-1] * len(labelid[MASK_POS+1:])
+            inputid[MASK_POS] = tokenizer.mask_token_id
         else:
-            labelid[maskpos] = pos_id
-            labelid[:maskpos] = [-1]* len(labelid[:maskpos]) 
-            labelid[maskpos+1:] = [-1] * len(labelid[maskpos+1:])
-            inputid[maskpos] = tokenizer.mask_token_id
+            labelid[MASK_POS] = pos_id
+            labelid[:MASK_POS] = [-1]* len(labelid[:MASK_POS]) 
+            labelid[MASK_POS+1:] = [-1] * len(labelid[MASK_POS+1:])
+            inputid[MASK_POS] = tokenizer.mask_token_id
 
         Labelid.append(labelid)
         Inputid.append(inputid)
@@ -195,8 +183,8 @@ for epoch in range(EPOCH):
                 epoch + 1, idx + 1, len(train_dataset), train_loss_sum / (idx + 1), time.time() - start))
             writer.add_scalar('loss/train_loss', train_loss_sum / (idx + 1), epoch)
 
-        truelabel=y[:,3]
-        out_train_mask=out_train[:,3,:]
+        truelabel=y[:,MASK_POS]
+        out_train_mask=out_train[:,MASK_POS,:]
         predicted=torch.max(out_train_mask,1)[1]
         correct += (predicted == truelabel).sum()
         correct = float(correct)
@@ -212,8 +200,8 @@ for epoch in range(EPOCH):
             out_test = model(ids , att , tpe)
             loss_eval = loss_func(out_test.view(-1, tokenizer.vocab_size), y.view(-1))
             eval_loss_sum += loss_eval.item()
-            ttruelabel = y[:, 3]
-            tout_train_mask = out_test[:, 3, :]
+            ttruelabel = y[:, MASK_POS]
+            tout_train_mask = out_test[:, MASK_POS, :]
             predicted_test = torch.max(tout_train_mask.data, 1)[1]
             correct_test += (predicted_test == ttruelabel).sum()
             correct_test = float(correct_test)
