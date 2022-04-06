@@ -1,4 +1,4 @@
-Text classification based on Prompt learning
+Sentiment classification based on Prompt learning
 
 
 blog:   https://blog.csdn.net/znsoft/article/details/123960223
